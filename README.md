@@ -32,9 +32,3 @@ to make use of the proxy. Once you press Ctrl+C in the terminal, it will
 stop your network from using SOCKS5 Proxy and then kill the SSH process.
 
 sshocks5 will use `sudo` to modify the network configuration.
-
-## TODO
-
-- [ ] Only run `sudo` once instead of once for setting the proxy
-      and another for removing it.
-- [ ] Allow passing any parameters to `ssh`
