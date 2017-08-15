@@ -27,10 +27,10 @@ func main() {
 		}
 	}()
 
-	networksetup := exec.Command("networksetup", "-setsocksfirewallproxystate", "Wi-Fi", "off")
+	networksetup := exec.Command("networksetup", "-setsocksfirewallproxy", "Wi-Fi", "localhost", "5030")
 	err = networksetup.Run()
 	if err != nil {
-		log.Fatalf("failed to run networksetup: %v", err)
+		log.Fatalf("failed to set socks5 proxy: %v", err)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -44,5 +44,11 @@ func main() {
 		}
 	case <-sshDone:
 		log.Print("ssh unexpectedly quit, state: %v", ssh.ProcessState)
+	}
+
+	networksetup = exec.Command("networksetup", "-setsocksfirewallproxystate", "Wi-Fi", "off")
+	err = networksetup.Run()
+	if err != nil {
+		log.Fatalf("failed to turn off socks5 proxy: %v", err)
 	}
 }
