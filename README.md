@@ -4,7 +4,7 @@
 
 ## Usage
 
-```zsh
+```fish
 $ sshocks5 --help
 Usage of sshocks5:
   -D string
@@ -13,6 +13,12 @@ Usage of sshocks5:
     	host to connect to
   -net string
     	network to configure to use SOCKS5 proxy (default "Wi-Fi")
+```
+
+### Example
+
+```fish
+$ sshocks5 --host coder.com
 ```
 
 ## Explanation
