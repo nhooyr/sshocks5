@@ -5,7 +5,14 @@
 ## Usage
 
 ```zsh
-sshocks5 --help
+$ sshocks5 --help
+Usage of sshocks5:
+  -D string
+    	socks5 listening address (addr:port) (default "localhost:5030")
+  -host string
+    	host to connect to
+  -net string
+    	network to configure to use SOCKS5 proxy (default "Wi-Fi")
 ```
 
 ## Explanation
