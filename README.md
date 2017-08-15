@@ -23,7 +23,7 @@ $ sshocks5 --host coder.com
 
 ## Explanation
 
-sshocks5 will use `ssh` to connect to a host of your choosing
+sshocks5 will use `ssh` to connect to a host/port of your choosing
 and open a SOCKS5 proxy on localhost:5030 (configurable). Then, it will
 use `networksetup` to modify your `Wi-Fi` (configurable) network
 to make use of the proxy. Once you press Ctrl+C in the terminal, it will
@@ -35,3 +35,4 @@ sshocks5 will use `sudo` to modify the network configuration.
 
 - [ ] Only run `sudo` once instead of once for setting the proxy
       and another for removing it.
+- [ ] Allow passing any parameters to `ssh`

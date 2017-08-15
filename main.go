@@ -7,27 +7,28 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nhooyr/log"
 	"github.com/pkg/errors"
 )
 
-func waitSSH(cmd *exec.Cmd, done chan struct{}) error {
-	defer close(done)
+func waitSSH(cmd *exec.Cmd, errc chan<- error) {
 	err := cmd.Wait()
 	pErr, ok := err.(*exec.ExitError)
 	if !ok {
-		return errors.Wrap(err, "unexpected error waiting for ssh")
+		errc <- errors.Wrap(err, "unexpected error waiting for ssh")
+		return
 	}
 	status := pErr.ProcessState.Sys().(syscall.WaitStatus)
 	if status.Signal() != os.Kill {
-		return errors.Wrap(err, "ssh not killed by us")
+		errc <- errors.Wrap(err, "ssh not killed by us")
 	}
-	return nil
 }
 
 func main() {
 	host := flag.String("host", "", "host to connect to")
+	port := flag.String("port", "", "port to connect to")
 	socks5Addr := flag.String("D", "localhost:5030", "socks5 listening address (addr:port)")
 	network := flag.String("net", "Wi-Fi", "network to configure to use SOCKS5 proxy")
 	flag.Parse()
@@ -44,19 +45,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	ssh := exec.Command("ssh", *host, "-D", *socks5Addr, "-o", "ControlPath=none", "-N")
+	sshArgs := []string{*host, "-D", *socks5Addr, "-o", "ControlPath=none", "-N"}
+	if *port != "" {
+		sshArgs = append(sshArgs, "-p", *port)
+	}
+	ssh := exec.Command("ssh", sshArgs...)
+	ssh.Stdin = os.Stdin
+	ssh.Stdout = os.Stdout
+	ssh.Stderr = os.Stderr
 	err := ssh.Start()
 	if err != nil {
 		log.Fatalf("failed to start ssh: %v", err)
 	}
 
-	sshDone := make(chan struct{})
-	go func() {
-		err := waitSSH(ssh, sshDone)
-		if err != nil {
-			log.Printf("error waiting for ssh: %v", err)
-		}
-	}()
+	sshErrc := make(chan error)
+	go waitSSH(ssh, sshErrc)
+
+	// Allow some time for SSH to start and report a possible error.
+	time.Sleep(10 * time.Millisecond)
+
+	select {
+	case err := <-sshErrc:
+		log.Fatalf("ssh unexpectedly quit: %v", err)
+	default:
+	}
 
 	socks5Host, socks5Port, err := net.SplitHostPort(*socks5Addr)
 	if err != nil {
@@ -86,8 +98,8 @@ func main() {
 		if err != nil {
 			log.Printf("erorr killing ssh: %v", err)
 		}
-	case <-sshDone:
-		log.Printf("ssh unexpectedly quit, state: %v", ssh.ProcessState)
+	case err = <-sshErrc:
+		log.Printf("ssh unexpectedly quit: %v", err)
 	}
 
 	networksetup = exec.Command("sudo", "networksetup", "-setsocksfirewallproxystate", *network, "off")
