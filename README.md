@@ -1,5 +1,7 @@
 # sshocks5
 
+*note: macOS only*
+
 ## Usage
 
 ```zsh
