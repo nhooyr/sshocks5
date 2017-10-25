@@ -6,33 +6,31 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/nhooyr/log"
-	"github.com/pkg/errors"
 )
 
-func waitSSH(cmd *exec.Cmd, errc chan<- error) {
-	err := cmd.Wait()
-	pErr, ok := err.(*exec.ExitError)
-	if !ok {
-		errc <- errors.Wrap(err, "unexpected error waiting for ssh")
-		return
-	}
-	status := pErr.ProcessState.Sys().(syscall.WaitStatus)
-	if status.Signal() != os.Kill {
-		errc <- errors.Wrap(err, "ssh not killed by us")
+func requireRoot() {
+	if os.Geteuid() != 0 {
+		sudo := exec.Command("sudo", os.Args...)
+		attachCmd(sudo)
+		// TODO research whether it is possible to use Start here instead and have the terminal wait.
+		err := sudo.Run()
+		must(err)
+		os.Exit(0)
 	}
 }
 
 func main() {
+	requireRoot()
+
 	host := flag.String("host", "", "host to connect to")
 	port := flag.String("port", "", "port to connect to")
-	socks5Addr := flag.String("D", "localhost:5030", "socks5 listening address (addr:port)")
+	socks5Addr := flag.String("D", "localhost:5030", "socks5 listening address as [addr:]port")
 	network := flag.String("net", "Wi-Fi", "network to configure to use SOCKS5 proxy")
 	flag.Parse()
 
+	// TODO add this into the log package.
 	log := log.Logger{
 		Out: log.LineWriter{
 			Out: &log.AtomicWriter{Out: os.Stderr},
@@ -50,42 +48,25 @@ func main() {
 		sshArgs = append(sshArgs, "-p", *port)
 	}
 	ssh := exec.Command("ssh", sshArgs...)
-	ssh.Stdin = os.Stdin
-	ssh.Stdout = os.Stdout
-	ssh.Stderr = os.Stderr
+	attachCmd(ssh)
 	err := ssh.Start()
-	if err != nil {
-		log.Fatalf("failed to start ssh: %v", err)
-	}
+	must(err)
 
-	sshErrc := make(chan error)
-	go waitSSH(ssh, sshErrc)
-
-	// Allow some time for SSH to start and report a possible error.
-	time.Sleep(10 * time.Millisecond)
-
-	select {
-	case err := <-sshErrc:
-		log.Fatalf("ssh unexpectedly quit: %v", err)
-	default:
-	}
+	errc := make(chan error, 1)
+	go func() {
+		errc <- ssh.Wait()
+	}()
 
 	socks5Host, socks5Port, err := net.SplitHostPort(*socks5Addr)
-	if err != nil {
-		log.Fatalf("failed to split host port socks5Addr: %v", err)
-	}
-	if socks5Host == "" || socks5Host == "*" {
+	must(err)
+	if socks5Host == "" {
 		socks5Host = "localhost"
 	}
 
-	networksetup := exec.Command("sudo", "networksetup", "-setsocksfirewallproxy", *network, socks5Host, socks5Port)
-	networksetup.Stdin = os.Stdin
-	networksetup.Stdout = os.Stdout
-	networksetup.Stderr = os.Stderr
-	err = networksetup.Run()
-	if err != nil {
-		log.Fatalf("failed to set socks5 proxy: %v", err)
-	}
+	networkSetup := exec.Command("networksetup", "-setsocksfirewallproxy", *network, socks5Host, socks5Port)
+	attachCmd(networkSetup)
+	err = networkSetup.Run()
+	must(err)
 
 	log.Print("initialized")
 
@@ -96,18 +77,26 @@ func main() {
 	case <-c:
 		err := ssh.Process.Kill()
 		if err != nil {
-			log.Printf("erorr killing ssh: %v", err)
+			log.Printf("error killing ssh: %v", err)
 		}
-	case err = <-sshErrc:
+	case err = <-errc:
 		log.Printf("ssh unexpectedly quit: %v", err)
 	}
 
-	networksetup = exec.Command("sudo", "networksetup", "-setsocksfirewallproxystate", *network, "off")
-	networksetup.Stdin = os.Stdin
-	networksetup.Stdout = os.Stdout
-	networksetup.Stderr = os.Stderr
-	err = networksetup.Run()
+	networkSetup = exec.Command("networksetup", "-setsocksfirewallproxystate", *network, "off")
+	attachCmd(networkSetup)
+	err = networkSetup.Run()
+	must(err)
+}
+
+func attachCmd(cmd *exec.Cmd) {
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+}
+
+func must(err error) {
 	if err != nil {
-		log.Fatalf("failed to turn off socks5 proxy: %v", err)
+		panic(err)
 	}
 }
