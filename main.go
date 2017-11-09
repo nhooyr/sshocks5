@@ -43,18 +43,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	sshArgs := []string{*host, "-D", *socks5Addr, "-o", "ControlPath=none", "-N"}
-	if *port != "" {
-		sshArgs = append(sshArgs, "-p", *port)
+	var sudoSSHArgs []string
+
+	user, ok := os.LookupEnv("SUDO_USER")
+	if ok {
+		sudoSSHArgs = append(sudoSSHArgs, "-u", user)
 	}
-	ssh := exec.Command("ssh", sshArgs...)
-	attachCmd(ssh)
-	err := ssh.Start()
+
+	sudoSSHArgs = append(sudoSSHArgs, "ssh", *host, "-D", *socks5Addr, "-o", "ControlPath=none", "-N")
+
+	if *port != "" {
+		sudoSSHArgs = append(sudoSSHArgs, "-p", *port)
+	}
+
+	sudoSSH := exec.Command("sudo", sudoSSHArgs...)
+	attachCmd(sudoSSH)
+	err := sudoSSH.Start()
 	must(err)
 
 	errc := make(chan error, 1)
 	go func() {
-		errc <- ssh.Wait()
+		errc <- sudoSSH.Wait()
 	}()
 
 	socks5Host, socks5Port, err := net.SplitHostPort(*socks5Addr)
@@ -75,12 +84,12 @@ func main() {
 
 	select {
 	case <-c:
-		err := ssh.Process.Kill()
+		err := sudoSSH.Process.Kill()
 		if err != nil {
-			log.Printf("error killing ssh: %v", err)
+			log.Printf("error killing sudo ssh: %v", err)
 		}
 	case err = <-errc:
-		log.Printf("ssh unexpectedly quit: %v", err)
+		log.Printf("sudo ssh unexpectedly quit: %v", err)
 	}
 
 	networkSetup = exec.Command("networksetup", "-setsocksfirewallproxystate", *network, "off")
